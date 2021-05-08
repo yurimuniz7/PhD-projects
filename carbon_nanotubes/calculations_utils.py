@@ -49,6 +49,13 @@ def tau_g(mob, mu):
     
     return mob*mu/(e*10**16)
 
+def dispersion_relation_approximated(m, kp, mu, R):
+    num = e**2*mu*special.kn(m, kp*R)*special.iv(m, kp*R)*(m**2 + kp**2*R**2)
+    den = np.pi*epsilon_0*R*hbar**2
+    omega_p2 = num/den
+
+    return np.sqrt(omega_p2)
+
 #-------------------------------------------PURCELL FACTORS--------------------------------------------------------------------------------------
 def int_z(sigma, omega, mu, tau, T, R, k, d, m_max):
     """Auxiliary function for Pz"""
@@ -139,7 +146,6 @@ def gamma(omega_0, omega, mu, tau, T, R, d, m_max):
     Pxx = P('x', omega, mu, tau, T, R, d, m_max)[0]*P('x', omega_0 - omega, mu, tau, T, R, d, m_max)[0]
     Pyy = P('y', omega, mu, tau, T, R, d, m_max)[0]*P('y', omega_0 - omega, mu, tau, T, R, d, m_max)[0]
     Pzz = P('z', omega, mu, tau, T, R, d, m_max)[0]*P('z', omega_0 - omega, mu, tau, T, R, d, m_max)[0]
-    print('passing')
 
     return (Pxx + Pyy + Pzz)/3
 
