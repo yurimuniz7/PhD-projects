@@ -36,7 +36,7 @@ def conductivity(omega, mu, tau, T):
 
     return sigma, pct_error
 
-def r(m, sigma, omega, mu, tau, T, R, k):
+def r_cnt(m, sigma, omega, mu, tau, T, R, k):
     """Fresnel coefficient"""
 
     deltam = 1j*sigma*(m**2 + (k*R)**2)/(epsilon_0*omega*R)
@@ -49,51 +49,109 @@ def tau_g(mob, mu):
     
     return mob*mu/(e*10**16)
 
-def dispersion_relation_approximated(m, kp, mu, R):
+def dispersion_relation_approximated(m, kp, mu, R, epsilon = 1):
     num = e**2*mu*special.kn(m, kp*R)*special.iv(m, kp*R)*(m**2 + kp**2*R**2)
-    den = np.pi*epsilon_0*R*hbar**2
+    besselI = special.iv(m,kp*R)
+    term_epsilon_den = (epsilon*special.kn(m,kp*R)*special.ivp(m,kp*R) - besselI*special.kvp(m,kp*R))*kp*R
+    den = term_epsilon_den*np.pi*epsilon_0*R*hbar**2
     omega_p2 = num/den
 
     return np.sqrt(omega_p2)
 
+#-------------------------------------------GRAPHENE COATED WIRES--------------------------------------------------------------------------------------
+def r(m, sigma, omega, mu, tau, T, R, k, epsilon = 1):
+    """Fresnel coefficient"""
+
+    deltam = 1j*sigma*(m**2 + (k*R)**2)/(epsilon_0*omega*R)
+    besselI = special.iv(m,k*R)
+    term_epsilon_num = k*R*(epsilon - 1)*besselI*special.ivp(m,k*R)
+    term_epsilon_den = (epsilon*special.kn(m,k*R)*special.ivp(m,k*R) - besselI*special.kvp(m,k*R))*k*R
+    result = -(term_epsilon_num + besselI**2*deltam)/(term_epsilon_den + besselI*special.kn(m,k*R)*deltam)
+
+    return result
+
+def F(n, m, sigma, omega, mu, tau, T, R, range, theta, epsilon = 1):
+
+    phase = np.exp(1j*theta)
+    k = (1 + 0.99*phase)*range*omega/c
+    dk = 0.99j*range*phase*omega/c
+    deltam = 1j*sigma*(m**2 + (k*R)**2)/(epsilon_0*omega*R)
+    besselI = special.iv(m,k*R)
+    term_epsilon_den = (epsilon*special.kv(m,k*R)*special.ivp(m,k*R) - besselI*special.kvp(m,k*R))*k*R
+    return dk*k**n/(term_epsilon_den + besselI*special.kv(m,k*R)*deltam)
+
+
+def IF(n, m, sigma, omega, mu, tau, T, R, range, epsilon = 1):
+
+    F_re = lambda theta: np.real(F(n, m, sigma, omega, mu, tau, T, R, range, theta, epsilon))
+    F_im = lambda theta: np.imag(F(n, m, sigma, omega, mu, tau, T, R, range, theta, epsilon))
+
+    integral_re = integrate.quad(F_re, 0, 2*np.pi)
+    integral_im = integrate.quad(F_im, 0, 2*np.pi)
+    result = integral_re[0] + 1j*integral_im[0]
+    pct_error = (100*integral_re[1]/integral_re[0] + 100*integral_im[1]/integral_im[0])/2
+
+    return result, pct_error
+
+def kp_res(m, sigma, omega, mu, tau, T, R, range, epsilon = 1):
+
+    I0, _ = IF(0, m, sigma, omega, mu, tau, T, R, range, epsilon)
+    I1, _ = IF(1, m, sigma, omega, mu, tau, T, R, range, epsilon)
+    I2, _ = IF(2, m, sigma, omega, mu, tau, T, R, range, epsilon)
+
+    if (I1 == 0)|(I2 == 0):
+        return 0
+
+    result1 = I1/I0
+    result2 = I2/I1
+
+    pct_error = 100*np.abs((result2 - result1)/result1)
+    if pct_error > 5:
+        print('Not able to find kp')
+        return omega/c
+    else:
+        return result1
+
+
 #-------------------------------------------PURCELL FACTORS--------------------------------------------------------------------------------------
-def int_z(sigma, omega, mu, tau, T, R, k, d, m_max):
+def int_z(sigma, omega, mu, tau, T, R, k, d, m_max, epsilon=1):
     """Auxiliary function for Pz"""
 
-    term0 = k**2*special.k0(k*d)**2*np.imag(r(0, sigma, omega, mu, tau, T, R, k))
-    terms_array = np.array([k**2*special.kn(m,k*d)**2*np.imag(r(m, sigma, omega, mu, tau, T, R, k)) for m in range(1,m_max + 1)])
+    term0 = k**2*special.k0(k*d)**2*np.imag(r(0, sigma, omega, mu, tau, T, R, k, epsilon))
+    terms_array = np.array([k**2*special.kn(m,k*d)**2*np.imag(r(m, sigma, omega, mu, tau, T, R, k, epsilon)) for m in range(1,m_max + 1)])
     result = term0 + 2*np.sum(terms_array)
 
     return result
 
-def int_x(sigma, omega, mu, tau, T, R, k, d, m_max):
+def int_x(sigma, omega, mu, tau, T, R, k, d, m_max, epsilon=1):
     """Auxiliary function for Px"""
-
-    term0 = k**2*(special.kn(1,k*d) + special.kn(-1,k*d))**2*np.imag(r(0, sigma, omega, mu, tau, T, R, k))/4
-    terms_array = np.array([k**2*(special.kn(m + 1,k*d) + special.kn(m - 1,k*d))**2*np.imag(r(m, sigma, omega, mu, tau, T, R, k))/4 for m in range(1,m_max + 1)])
+    term0 = k**2*(special.kn(1,k*d) + special.kn(-1,k*d))**2*np.imag(r(0, sigma, omega, mu, tau, T, R, k, epsilon))/4
+    terms_array = np.array([k**2*(special.kn(m + 1,k*d) + special.kn(m - 1,k*d))**2*np.imag(r(m, sigma, omega, mu, tau, T, R, k, epsilon))/4 for m in range(1,m_max + 1)])
     result = term0 + 2*np.sum(terms_array)
 
     return result
 
-def int_y(sigma, omega, mu, tau, T, R, k, d, m_max):
+def int_y(sigma, omega, mu, tau, T, R, k, d, m_max, epsilon=1):
     """Auxiliary function for Py"""
 
-    terms_array = np.array([m**2*special.kn(m,k*d)**2*np.imag(r(m, sigma, omega, mu, tau, T, R, k))/d**2 for m in range(1,m_max + 1)])
+    terms_array = np.array([m**2*special.kn(m,k*d)**2*np.imag(r(m, sigma, omega, mu, tau, T, R, k, epsilon))/d**2 for m in range(1,m_max + 1)])
     result = 2*np.sum(terms_array)
 
     return result
 
-def P(dir, omega, mu, tau, T, R, d, m_max):
+def P(dir, omega, mu, tau, T, R, d, m_max, epsilon=1, drude = False):
     """Purcell factor for a given direction"""
-
-    sigma, _ = conductivity(omega,mu,tau,T)
+    if drude:
+        sigma = 1j*e**2*mu/(np.pi*hbar**2*(omega + 1j/tau))
+    else:
+        sigma, _ = conductivity(omega,mu,tau,T)
 
     if dir == 'x':
-        integrand = lambda k: int_x(sigma, omega, mu, tau, T, R, k, d, m_max)
+        integrand = lambda k: int_x(sigma, omega, mu, tau, T, R, k, d, m_max, epsilon)
     elif dir =='y':
-        integrand = lambda k: int_y(sigma, omega, mu, tau, T, R, k, d, m_max)
+        integrand = lambda k: int_y(sigma, omega, mu, tau, T, R, k, d, m_max, epsilon)
     elif dir =='z':
-        integrand = lambda k: int_z(sigma, omega, mu, tau, T, R, k, d, m_max)
+        integrand = lambda k: int_z(sigma, omega, mu, tau, T, R, k, d, m_max, epsilon)
     else:
         return None
 
@@ -103,6 +161,15 @@ def P(dir, omega, mu, tau, T, R, d, m_max):
     pct_error = 100*integral[1]/integral[0]
     
     return P, pct_error
+
+def P_iso(omega, mu, tau, T, R, d, m_max, epsilon=1):
+    """TPSE spectral density"""
+
+    Px = P('x', omega, mu, tau, T, R, d, m_max, epsilon)[0]
+    Py = P('y', omega, mu, tau, T, R, d, m_max, epsilon)[0]
+    Pz = P('z', omega, mu, tau, T, R, d, m_max, epsilon)[0]
+
+    return (Px + Py + Pz)/3
 
 #-------------------------------------------HYDROGEN FUNCTIONS--------------------------------------------------------------------------------------
 def R(n, l, r):
@@ -140,12 +207,12 @@ def T(d_matrix, ne, ng, omega, MCut):
     return np.sum(summands)
 
 #-------------------------------------------TPSE SPECTRAL DENSITIES--------------------------------------------------------------------------------------
-def gamma(omega_0, omega, mu, tau, T, R, d, m_max):
+def gamma(omega_0, omega, mu, tau, T, R, d, m_max, epsilon=1):
     """TPSE spectral density"""
 
-    Pxx = P('x', omega, mu, tau, T, R, d, m_max)[0]*P('x', omega_0 - omega, mu, tau, T, R, d, m_max)[0]
-    Pyy = P('y', omega, mu, tau, T, R, d, m_max)[0]*P('y', omega_0 - omega, mu, tau, T, R, d, m_max)[0]
-    Pzz = P('z', omega, mu, tau, T, R, d, m_max)[0]*P('z', omega_0 - omega, mu, tau, T, R, d, m_max)[0]
+    Pxx = P('x', omega, mu, tau, T, R, d, m_max, epsilon)[0]*P('x', omega_0 - omega, mu, tau, T, R, d, m_max, epsilon)[0]
+    Pyy = P('y', omega, mu, tau, T, R, d, m_max, epsilon)[0]*P('y', omega_0 - omega, mu, tau, T, R, d, m_max, epsilon)[0]
+    Pzz = P('z', omega, mu, tau, T, R, d, m_max, epsilon)[0]*P('z', omega_0 - omega, mu, tau, T, R, d, m_max, epsilon)[0]
 
     return (Pxx + Pyy + Pzz)/3
 
@@ -164,9 +231,9 @@ def Gamma_0(d_matrix, ne, ng, MCut, omegaCut):
 
     return integral[0]
 
-def Gamma(d_matrix, ne, ng, mu, tau, T, R, d, m_max, MCut, omegaCut):
+def Gamma(d_matrix, ne, ng, mu, tau, T, R, d, m_max, MCut, omegaCut, epsilon=1):
     """ TPSE rate near a CNT"""
-    integrand = lambda i: 2*gamma_0(d_matrix, ne,ng,i*domega(ne,ng),MCut)*gamma(domega(ne,ng), i*domega(ne,ng), mu, tau, T, R, d, m_max)/(10**10)
+    integrand = lambda i: 2*gamma_0(d_matrix, ne,ng,i*domega(ne,ng),MCut)*gamma(domega(ne,ng), i*domega(ne,ng), mu, tau, T, R, d, m_max, epsilon)/(10**10)
     integral = integrate.quad(integrand, omegaCut/domega(ne,ng),1/2, epsrel=10**(-4))
 
     return 10**10*domega(ne,ng)*integral[0]
