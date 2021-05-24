@@ -15,7 +15,7 @@ kb = 1.38*10**(-23)
 me = 9.10938356*10**(-31)
 a0 = 4*np.pi*epsilon_0*hbar**2/(me*e**2)
 
-#-------------------------------------------CARBON NANOTUBES--------------------------------------------------------------------------------------
+#-------------------------------------------CARBON NANOTUBES and GRAPHENE COATED WIRES--------------------------------------------------------------------------------------
 def G(x,mu,T):
     """Auxiliary function for graphene conductivity"""
     den1 = np.cosh(mu/(kb*T))/np.sinh(x/(kb*T))
@@ -36,29 +36,11 @@ def conductivity(omega, mu, tau, T):
 
     return sigma, pct_error
 
-def r_cnt(m, sigma, omega, mu, tau, T, R, k):
-    """Fresnel coefficient"""
-
-    deltam = 1j*sigma*(m**2 + (k*R)**2)/(epsilon_0*omega*R)
-    besselI = special.iv(m,k*R)
-    result = -besselI**2*deltam/(1 + besselI*special.kn(m,k*R)*deltam)
-
-    return result
-
 def tau_g(mob, mu):
     
     return mob*mu/(e*10**16)
 
-def dispersion_relation_approximated(m, kp, mu, R, epsilon = 1):
-    num = e**2*mu*special.kn(m, kp*R)*special.iv(m, kp*R)*(m**2 + kp**2*R**2)
-    besselI = special.iv(m,kp*R)
-    term_epsilon_den = (epsilon*special.kn(m,kp*R)*special.ivp(m,kp*R) - besselI*special.kvp(m,kp*R))*kp*R
-    den = term_epsilon_den*np.pi*epsilon_0*R*hbar**2
-    omega_p2 = num/den
 
-    return np.sqrt(omega_p2)
-
-#-------------------------------------------GRAPHENE COATED WIRES--------------------------------------------------------------------------------------
 def r(m, sigma, omega, mu, tau, T, R, k, epsilon = 1):
     """Fresnel coefficient"""
 
@@ -70,7 +52,17 @@ def r(m, sigma, omega, mu, tau, T, R, k, epsilon = 1):
 
     return result
 
+def r_cnt(m, sigma, omega, mu, tau, T, R, k):
+    """Fresnel coefficient for CNTs only"""
+
+    deltam = 1j*sigma*(m**2 + (k*R)**2)/(epsilon_0*omega*R)
+    besselI = special.iv(m,k*R)
+    result = -besselI**2*deltam/(1 + besselI*special.kn(m,k*R)*deltam)
+
+    return result
+
 def F(n, m, sigma, omega, mu, tau, T, R, range, theta, epsilon = 1):
+    """Auxiliary function for calculating the dispersion relation through integration in the complex plane"""
 
     phase = np.exp(1j*theta)
     k = (1 + 0.99*phase)*range*omega/c
@@ -82,6 +74,7 @@ def F(n, m, sigma, omega, mu, tau, T, R, range, theta, epsilon = 1):
 
 
 def IF(n, m, sigma, omega, mu, tau, T, R, range, epsilon = 1):
+    """Integral in the complex plane"""
 
     F_re = lambda theta: np.real(F(n, m, sigma, omega, mu, tau, T, R, range, theta, epsilon))
     F_im = lambda theta: np.imag(F(n, m, sigma, omega, mu, tau, T, R, range, theta, epsilon))
@@ -89,29 +82,44 @@ def IF(n, m, sigma, omega, mu, tau, T, R, range, epsilon = 1):
     integral_re = integrate.quad(F_re, 0, 2*np.pi)
     integral_im = integrate.quad(F_im, 0, 2*np.pi)
     result = integral_re[0] + 1j*integral_im[0]
-    pct_error = (100*integral_re[1]/integral_re[0] + 100*integral_im[1]/integral_im[0])/2
 
-    return result, pct_error
+    return result
 
 def kp_res(m, sigma, omega, mu, tau, T, R, range, epsilon = 1):
+    """Plasmon wavevector calculation. Returns zero if there is no solution for the transcedental equation"""
 
-    I0, _ = IF(0, m, sigma, omega, mu, tau, T, R, range, epsilon)
-    I1, _ = IF(1, m, sigma, omega, mu, tau, T, R, range, epsilon)
-    I2, _ = IF(2, m, sigma, omega, mu, tau, T, R, range, epsilon)
+    I0 = IF(0, m, sigma, omega, mu, tau, T, R, range, epsilon)
+    I1 = IF(1, m, sigma, omega, mu, tau, T, R, range, epsilon)
+    I2 = IF(2, m, sigma, omega, mu, tau, T, R, range, epsilon)
 
-    if (I1 == 0)|(I2 == 0):
+    if (I0 == 0)|(I1 == 0)|(I2 == 0):
         return 0
 
     result1 = I1/I0
     result2 = I2/I1
 
     pct_error = 100*np.abs((result2 - result1)/result1)
-    if pct_error > 5:
-        print('Not able to find kp')
-        return omega/c
+    if pct_error > 1:
+        return 0
     else:
         return result1
 
+def dispersion_relation_approximated(m, kp, mu, R, epsilon = 1):
+    """Approximated expression for the dispersion relation (not inverted)"""
+
+    num = e**2*mu*special.kn(m, kp*R)*special.iv(m, kp*R)*(m**2 + kp**2*R**2)
+    besselI = special.iv(m,kp*R)
+    term_epsilon_den = (epsilon*special.kn(m,kp*R)*special.ivp(m,kp*R) - besselI*special.kvp(m,kp*R))*kp*R
+    den = term_epsilon_den*np.pi*epsilon_0*R*hbar**2
+    omega_p2 = num/den
+
+    return np.sqrt(omega_p2)
+
+def omega_min(m,mu,R,epsilon):
+    """Minimum frequency of excitation of a plasmonic mode"""
+    num = e**2*mu*m
+    den = (1 + epsilon)*np.pi*epsilon_0*hbar**2*R
+    return np.sqrt(num/den)
 
 #-------------------------------------------PURCELL FACTORS--------------------------------------------------------------------------------------
 def int_z(sigma, omega, mu, tau, T, R, k, d, m_max, epsilon=1):
@@ -139,12 +147,8 @@ def int_y(sigma, omega, mu, tau, T, R, k, d, m_max, epsilon=1):
 
     return result
 
-def P(dir, omega, mu, tau, T, R, d, m_max, epsilon=1, drude = False):
+def P(dir, sigma, omega, mu, tau, T, R, d, m_max, epsilon=1):
     """Purcell factor for a given direction"""
-    if drude:
-        sigma = 1j*e**2*mu/(np.pi*hbar**2*(omega + 1j/tau))
-    else:
-        sigma, _ = conductivity(omega,mu,tau,T)
 
     if dir == 'x':
         integrand = lambda k: int_x(sigma, omega, mu, tau, T, R, k, d, m_max, epsilon)
@@ -165,9 +169,10 @@ def P(dir, omega, mu, tau, T, R, d, m_max, epsilon=1, drude = False):
 def P_iso(omega, mu, tau, T, R, d, m_max, epsilon=1):
     """TPSE spectral density"""
 
-    Px = P('x', omega, mu, tau, T, R, d, m_max, epsilon)[0]
-    Py = P('y', omega, mu, tau, T, R, d, m_max, epsilon)[0]
-    Pz = P('z', omega, mu, tau, T, R, d, m_max, epsilon)[0]
+    sigma, _ = conductivity(omega,mu,tau,T)
+    Px = P('x', sigma, omega, mu, tau, T, R, d, m_max, epsilon)[0]
+    Py = P('y', sigma, omega, mu, tau, T, R, d, m_max, epsilon)[0]
+    Pz = P('z', sigma, omega, mu, tau, T, R, d, m_max, epsilon)[0]
 
     return (Px + Py + Pz)/3
 
@@ -209,10 +214,12 @@ def T(d_matrix, ne, ng, omega, MCut):
 #-------------------------------------------TPSE SPECTRAL DENSITIES--------------------------------------------------------------------------------------
 def gamma(omega_0, omega, mu, tau, T, R, d, m_max, epsilon=1):
     """TPSE spectral density"""
+    sigma1, _ = conductivity(omega,mu,tau,T)
+    sigma2, _ = conductivity(omega_0 - omega,mu,tau,T)
 
-    Pxx = P('x', omega, mu, tau, T, R, d, m_max, epsilon)[0]*P('x', omega_0 - omega, mu, tau, T, R, d, m_max, epsilon)[0]
-    Pyy = P('y', omega, mu, tau, T, R, d, m_max, epsilon)[0]*P('y', omega_0 - omega, mu, tau, T, R, d, m_max, epsilon)[0]
-    Pzz = P('z', omega, mu, tau, T, R, d, m_max, epsilon)[0]*P('z', omega_0 - omega, mu, tau, T, R, d, m_max, epsilon)[0]
+    Pxx = P('x', sigma1, omega, mu, tau, T, R, d, m_max, epsilon)[0]*P('x', sigma2, omega_0 - omega, mu, tau, T, R, d, m_max, epsilon)[0]
+    Pyy = P('y', sigma1, omega, mu, tau, T, R, d, m_max, epsilon)[0]*P('y', sigma2, omega_0 - omega, mu, tau, T, R, d, m_max, epsilon)[0]
+    Pzz = P('z', sigma1, omega, mu, tau, T, R, d, m_max, epsilon)[0]*P('z', sigma2, omega_0 - omega, mu, tau, T, R, d, m_max, epsilon)[0]
 
     return (Pxx + Pyy + Pzz)/3
 
