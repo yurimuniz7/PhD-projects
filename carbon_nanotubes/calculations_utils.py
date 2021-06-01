@@ -241,7 +241,7 @@ def Gamma_0(d_matrix, ne, ng, MCut, omegaCut):
 def Gamma(d_matrix, ne, ng, mu, tau, T, R, d, m_max, MCut, omegaCut, epsilon=1):
     """ TPSE rate near a CNT"""
     integrand = lambda i: 2*gamma_0(d_matrix, ne,ng,i*domega(ne,ng),MCut)*gamma(domega(ne,ng), i*domega(ne,ng), mu, tau, T, R, d, m_max, epsilon)/(10**10)
-    integral = integrate.quad(integrand, omegaCut/domega(ne,ng),1/2, epsrel=10**(-4))
+    integral = integrate.quad(integrand, omegaCut/domega(ne,ng),1/2)
 
     return 10**10*domega(ne,ng)*integral[0]
 
